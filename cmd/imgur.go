@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/neoblackcap/ff/utils"
@@ -12,6 +13,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 )
 
 var fetchImgurAlbumCmd = &cobra.Command{
@@ -158,7 +161,8 @@ func fetchAlbum(albumHash string) ([]byte, error) {
 	return body, err
 }
 
-func fetchImgurImage(index int, image Image, dst string) {
+func fetchImgurImage(ctx context.Context, image Image, dst string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	method := "GET"
 
 	payload := &bytes.Buffer{}
@@ -169,7 +173,7 @@ func fetchImgurImage(index int, image Image, dst string) {
 	}
 
 	client := &http.Client{}
-	req, err := http.NewRequest(method, image.Link, payload)
+	req, err := http.NewRequestWithContext(ctx, method, image.Link, payload)
 
 	if err != nil {
 		fmt.Println(err)
@@ -177,8 +181,8 @@ func fetchImgurImage(index int, image Image, dst string) {
 
 	authorizationHeader := fmt.Sprintf("Client-ID %s", imgurPara.ClientID)
 	req.Header.Add("Authorization", authorizationHeader)
-
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+
 	res, err := client.Do(req)
 	defer res.Body.Close()
 	body, err := ioutil.ReadAll(res.Body)
@@ -232,8 +236,13 @@ func fetchImageAlbum(cmd *cobra.Command, args []string) {
 
 	dst := utils.CreateFolder(imgurPara.Destination)
 
-	for i, image := range images {
-		fetchImgurImage(i, image, dst)
+	var wg sync.WaitGroup
+	wg.Add(len(images))
+	ctx, _ := context.WithTimeout(context.Background(), time.Second * time.Duration(imgurPara.Timeout))
+
+	for _, image := range images {
+		go fetchImgurImage(ctx, image, dst, &wg)
 	}
+	wg.Wait()
 	log.Info("fetch all images")
 }
