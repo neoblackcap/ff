@@ -161,7 +161,7 @@ func fetchAlbum(albumHash string) ([]byte, error) {
 	return body, err
 }
 
-func fetchImgurImage(ctx context.Context, image Image, dst string, wg *sync.WaitGroup) {
+func fetchImgurImage(ctx context.Context, image Image, index int, dst string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	method := "GET"
 
@@ -184,7 +184,11 @@ func fetchImgurImage(ctx context.Context, image Image, dst string, wg *sync.Wait
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	res, err := client.Do(req)
+	if err != nil {
+		log.Errorf("fetch image %d<%s> error: %s", index, image.Link, err)
+	}
 	defer res.Body.Close()
+
 	body, err := ioutil.ReadAll(res.Body)
 	u, err := url.Parse(image.Link)
 	if err != nil {
@@ -193,8 +197,9 @@ func fetchImgurImage(ctx context.Context, image Image, dst string, wg *sync.Wait
 	}
 	paths := strings.Split(u.Path, "/")
 	_filename := paths[len(paths)-1]
+	ext := strings.Split(_filename, ".")[1]
 
-	filename := fmt.Sprintf("%s/%s", dst, _filename)
+	filename := fmt.Sprintf("%s/%03d.%s", dst, index, ext)
 
 	_ = ioutil.WriteFile(filename, body, 0644)
 }
@@ -240,8 +245,8 @@ func fetchImageAlbum(cmd *cobra.Command, args []string) {
 	wg.Add(len(images))
 	ctx, _ := context.WithTimeout(context.Background(), time.Second * time.Duration(imgurPara.Timeout))
 
-	for _, image := range images {
-		go fetchImgurImage(ctx, image, dst, &wg)
+	for index, image := range images {
+		go fetchImgurImage(ctx, image, index, dst, &wg)
 	}
 	wg.Wait()
 	log.Info("fetch all images")
